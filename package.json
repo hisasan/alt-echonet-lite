@@ -1,0 +1,15 @@
+{
+  "name": "alt-echonet-lite",
+  "version": "0.1.0",
+  "description": "Alternative ECHONET-Lite controller module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Echonet",
+    "Lite"
+  ],
+  "author": "Hisanobu Doi <hisasan@gmail.com> (https://github.com/hisasan)",
+  "license": "MIT"
+}
