@@ -93,7 +93,7 @@ var info = {
 
 |項目|内容|
 |:----|:--------------------------------------|
-|ホスト|Raspberry Pi 3B+ Raspbian Streach Lite|
+|ホスト|Raspberry Pi 3B+ Raspbian Stretch Lite|
 |ECHONET-Lite機器|パナソニック社製アドバンスリンクモデル x 2系統|
 ||パナソニック社製IP/JEM-A変換アダプタ HF-JA1-W|
 ||パナソニック社製AiSEG2|

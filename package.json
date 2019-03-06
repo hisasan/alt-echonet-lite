@@ -6,10 +6,21 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hisasan/alt-echonet-lite.git"
+  },
   "keywords": [
     "Echonet",
     "Lite"
   ],
   "author": "Hisanobu Doi <hisasan@gmail.com> (https://github.com/hisasan)",
-  "license": "MIT"
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hisasan/alt-echonet-lite/issues"
+  },
+  "homepage": "https://github.com/hisasan/alt-echonet-lite#readme",
+  "dependencies": {
+    "debug": "^4.1.1"
+  }
 }
