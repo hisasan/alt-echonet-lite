@@ -279,10 +279,14 @@ function receiverMulticast(info, p) {
 function pushExec(self, node, frame) {
     // コールバック指定がない場合はグローバルコールバックを使用
     frame.callback = frame.callback || self.callback;
-    self.elnode[node].que.push(frame);
-    if (self.elnode[node].run == null) {
-        // sender停止時に起動する
-        sender({self:self, f:self.elnode[node]});
+    if (self.elnode.hasOwnProperty(node)) {
+        self.elnode[node].que.push(frame);
+        if (self.elnode[node].run == null) {
+            // sender停止時に起動する
+            sender({self:self, f:self.elnode[node]});
+        }
+    } else {
+        frame.callback({node:node, error:'unknown node'});
     }
 }
 
