@@ -266,6 +266,15 @@ function receiverMulticast(info, p) {
         }
         // タイムアウト
         if (f.resp == 0) {
+            let reason = 'error:timeout';
+            if (--f.retry >= 0) {
+                // リトライ間隔あけて再送
+                debug(`Retry elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${reason}`);
+                setTimeout(sender, p.self.cfg.RETRYINTERVAL, p);
+                return true;
+            }
+            // リトライオーバー
+            console.error(`Retry over elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${reason}`);
             // 応答が1つもなかった場合はエラーでコールバックする
             goCallback(f.node, info, f.run.callback);
         }
