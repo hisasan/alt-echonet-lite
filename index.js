@@ -94,19 +94,6 @@ function searchNode(self) {
     }
 }
 
-// 自局インタフェースのアドレスか確認する
-function isOwnAddress(address) {
-    const interfaces = os.networkInterfaces();
-    for (let iface in interfaces) {
-        for (let i = 0; i < interfaces[iface].length; i++) {
-            if (interfaces[iface][i].address == address) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 // ノード更新
 function updateNode(self, node, prop, v) {
     if (!self.elnode.hasOwnProperty(node)) {
@@ -178,16 +165,7 @@ function sender(p) {
         f.resp  = 0;
         if ([ESV.SetC, ESV.Get, ESV.SetGet, ESV.INF_REQ, ESV.INFC].indexOf(getESVbyte(f.run.ESV)) >= 0) {
             // 応答要要求
-            let callback = undefined;
-            if (((f.run.DEOJ & 0xff) == 0) || (f.address == multicastAddress)) {
-                // マルチキャスト要求
-                // 全インスタンス宛ての要求もマルチキャスト扱いにする
-                callback = receiverMulticast;
-            } else {
-                // ユニキャスト要求
-                callback = receiverUnicast;
-            }
-            let tid = generateTID(p.self, callback, p.self.cfg.QUERYTIMEOUT, p);
+            let tid = generateTID(p.self, receiver, p.self.cfg.QUERYTIMEOUT, p);
             f.run.buf.writeUIntBE(tid, 2, 2);
             send(f.address, f.run.buf);
         } else if ([ESV.SetI].indexOf(getESVbyte(f.run.ESV)) >= 0) {
@@ -208,75 +186,52 @@ function nextQuery(p) {
     sender(p);
 }
 
-// ユニキャスト要求の応答確認
+// 応答確認
 // 正常応答またはリトライオーバーでコールバックする
-function receiverUnicast(info, p) {
+function receiver(info, p) {
     let f = p.f;
     if (f.run) {
-        // 応答確認
-        const resESV = {
-            SetC:   'Set_Res',
-            Get:    'Get_Res',
-            SetGet: 'SetGet_Res',
-            INF_REQ:'INF',
-            INFC:   'INFC_Res'
-        };
-        if (!info.hasOwnProperty('frame') || !info.frame.hasOwnProperty('ESV') ||
-            resESV[getESVsymbol(f.run.ESV)] != info.frame.ESV) {
-            // 異常応答もしくはタイムアウト
-            let reason;
-            if (info.hasOwnProperty('frame') && info.frame.hasOwnProperty('ESV')) {
-                // 応答のESVが正常応答ではない
-                reason = 'ESV:' + info.frame.ESV;
-            } else if (info.hasOwnProperty('error')) {
-                // タイムアウトなどのエラー
-                reason = 'error:' + info.error;
+        if (info.hasOwnProperty('frame')) {
+            // 自分が送信してループバックしたと思われるパケットは捨てる
+            if (f.run.TID == info.frame.TID && f.run.SEOJ == info.frame.SEOJ && f.run.DEOJ == info.frame.DEOJ &&
+                getESVsymbol(f.run.ESV) == getESVsymbol(info.frame.ESV) &&
+                f.run.EPC == info.frame.EPC) {
+                return false;
             }
-            if (--f.retry >= 0) {
-                // リトライ間隔あけて再送
-                debug(`Retry elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${reason}`);
-                setTimeout(sender, p.self.cfg.RETRYINTERVAL, p);
-                return true;
+            // 応答確認
+            const resESV = {
+                SetI:   '',
+                SetC:   'Set_Res',
+                Get:    'Get_Res',
+                SetGet: 'SetGet_Res',
+                INF_REQ:'INF',
+                INFC:   'INFC_Res'
+            };
+            if (resESV[getESVsymbol(f.run.ESV)] != info.frame.ESV) {
+                // 異常応答
+                info.error = 'ESV:' + info.frame.ESV;
             }
-            // リトライオーバー
-            console.error(`Retry over elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${reason}`);
         }
-        // 完了コールバック
-        goCallback(f.node, info, f.run.callback);
-    }
-    // 次の要求へ
-    nextQuery(p);
-    return true;
-}
-
-// マルチキャスト要求の応答確認
-// タイムアウトまでの全ての応答でコールバックする
-function receiverMulticast(info, p) {
-    let f = p.f;
-    if (f.run) {
-        // 応答確認
-        if (info.hasOwnProperty('frame') && info.frame.hasOwnProperty('ESV')) {
-            // タイムアウトまで他の応答も待つ
-            if (!isOwnAddress(info.rinfo.address)) {
-                // 自局が送信したもの以外はすべて受け入れる
-                goCallback(f.node, info, f.run.callback);
-                f.resp++;
+        if (info.hasOwnProperty('error')) {
+            if (f.resp == 0) {
+                if (--f.retry >= 0) {
+                    // リトライ間隔あけて再送
+                    debug(`Retry elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${info.error}`);
+                    setTimeout(sender, p.self.cfg.RETRYINTERVAL, p);
+                    return true;
+                }
+                // リトライオーバー
+                console.error(`Retry over elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${info.error}`);
             }
-            return false;
         }
-        // タイムアウト
-        if (f.resp == 0) {
-            let reason = 'error:timeout';
-            if (--f.retry >= 0) {
-                // リトライ間隔あけて再送
-                debug(`Retry elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${reason}`);
-                setTimeout(sender, p.self.cfg.RETRYINTERVAL, p);
-                return true;
-            }
-            // リトライオーバー
-            console.error(`Retry over elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${reason}`);
-            // 応答が1つもなかった場合はエラーでコールバックする
+        // コールバック
+        if (!(f.resp > 0 && info.error == 'timeout')) {
             goCallback(f.node, info, f.run.callback);
+            f.resp++;
+        }
+        // マルチキャストまたは全インスタンス宛てはタイムアウトまで待つ
+        if (((f.run.DEOJ & 0xff) == 0 || f.address == multicastAddress) && info.error != 'timeout') {
+            return false;
         }
     }
     // 次の要求へ
