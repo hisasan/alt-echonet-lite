@@ -113,6 +113,30 @@ function getAddressNode(self, address) {
     return null;
 }
 
+// フレームを文字列に変換
+function frameToString(f) {
+    let text = `inst=${toHexString(f.DEOJ, 6)} ESV=${f.ESV} `;
+    if (f.hasOwnProperty('EPC')) {
+        text += `EPC=${toHexString(f.EPC, 2)}`;
+    }
+    else if (f.hasOwnProperty('PROP')) {
+        if (f.PROP.hasOwnProperty('EPC')) {
+            text += `EPC=${toHexString(f.PROP.EPC, 2)}`;
+        } else {
+            text += 'EPC=';
+            let comma = null;
+            for (let i = 0; i < f.PROP.length; i++) {
+                if (f.PROP[i].hasOwnProperty('EPC')) {
+                    text += (comma || '');
+                    text += `${toHexString(f.PROP[i].EPC, 2)}`;
+                    comma = ',';
+                }
+            }
+        }
+    }
+    return text;
+}
+
 // コールバック呼び出し
 function goCallback(node, info, callback) {
     if (typeof(callback) == 'function') {
@@ -238,12 +262,12 @@ function receiver(info, p) {
             // 1-1, 2-2
             if (--f.retry >= 0) {
                     // リトライ間隔あけて再送
-                    debug(`Retry elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${info.error}`);
+                    debug(`Retry elnode=${f.node} ` + frameToString(f.run) + ` reason=${info.error}`);
                     setTimeout(sender, p.self.cfg.RETRYINTERVAL, p);
                     return true;
                 }
                 // リトライオーバー
-                console.error(`Retry over elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${info.error}`);
+                console.error(`Retry over elnode=${f.node} ` + frameToString(f.run) + ` reason=${info.error}`);
             }
         }
         // コールバック
@@ -604,13 +628,12 @@ var el = function(callback, cfg) {
 // epc: プロパティコード 例)0x80
 // edt: データ 例)0x30
 // callback: コールバック関数(指定しない場合はグローバルコールバックが呼ばれる)
-el.prototype.sendtonode = function(node, instance, esv, epc, edt, callback) {
+el.prototype.sendtonode = function(node, instance, esv, prop, callback) {
     let frame = {
         SEOJ: CONTROLLER,
         DEOJ: instance,
         ESV:  esv,
-        EPC:  epc,
-        EDT:  edt,
+        PROP: prop,
         callback: callback
     };
     frame.buf = createFrame(this, frame);
@@ -618,13 +641,34 @@ el.prototype.sendtonode = function(node, instance, esv, epc, edt, callback) {
 }
 
 // SetC要求送信
-el.prototype.set = function(node, instance, epc, edt, callback) {
-    this.sendtonode(node, instance, ESV.SetC, epc, edt, callback);
+el.prototype.set = function(node, instance, ...args) {
+    let prop = [];
+    let callback;
+    const type = typeof args[0];
+    if (type == 'number') {
+        prop.push({EPC:args[0], EDT:args[1]});
+        callback = args[2];
+    } else if (type == 'object') {
+        for (let epc in args[0]) {
+            prop.push({EPC:epc, EDT:args[0][epc]});
+        }
+        callback = args[1];
+    }
+    this.sendtonode(node, instance, ESV.SetC, prop, callback);
 };
 
 // Get要求送信
-el.prototype.get = function(node, instance, epc, callback) {
-    this.sendtonode(node, instance, ESV.Get, epc, [], callback);
+el.prototype.get = function(node, instance, arg, callback) {
+    let prop = [];
+    const type = typeof arg;
+    if (type == 'number') {
+        prop.push({EPC:arg});
+    } else if (type == 'object') {
+        for (let epc in arg) {
+            prop.push({EPC:arg[epc]});
+        }
+    }
+    this.sendtonode(node, instance, ESV.Get, prop, callback);
 };
 
 // 要求キュークリア

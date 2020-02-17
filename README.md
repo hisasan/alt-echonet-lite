@@ -55,6 +55,18 @@ el.get(node, all_instance, epc, (info) => {
 el.get(el.multicastAddress, instance, epc, (info) => {
     console.log(info);
 });
+
+// 複数のEPCのset/getができる
+el.get(node, instance, {0x80, 0xb0}) (info) => {
+    console.log(info);
+});
+el.get(node, instance, [0x80, 0xb0]) (info) => {
+    console.log(info);
+});
+el.set(node, instance, {0x80:0x30, 0xb0:0x40}, info => {
+    console.log(info);
+})
+
 ```
 
 ### コールバック
