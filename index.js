@@ -124,6 +124,9 @@ function goCallback(node, info, callback) {
             let objList = [];
             for (let i = 0, j = 0; i < frame.OPC; i++) {
                 let obj = { node:node, instance:frame.SEOJ, rinfo:remote };
+                if (info.hasOwnProperty('error')) {
+                    obj.error = info.error;
+                }
                 obj.ESV = frame.ESV;
                 obj.EPC = frame.PROP[j++];
                 obj.PDC = frame.PROP[j++];
@@ -162,7 +165,10 @@ function sender(p) {
 
     if (f.run) {
         // 要求送信
-        f.resp  = 0;
+        f.multiResp = {
+            que: [],
+            error: 0
+        };
         if ([ESV.SetC, ESV.Get, ESV.SetGet, ESV.INF_REQ, ESV.INFC].indexOf(getESVbyte(f.run.ESV)) >= 0) {
             // 応答要要求
             let tid = generateTID(p.self, receiver, p.self.cfg.QUERYTIMEOUT, p);
@@ -212,9 +218,25 @@ function receiver(info, p) {
                 info.error = 'ESV:' + info.frame.ESV;
             }
         }
+        // リトライ条件
+        // 1. ユニキャスト要求の場合
+        //    1-1. 無条件にリトライ
+        // 2. マルチキャスト要求または全インスタンス要求の場合
+        //    2-1. タイムアウトまでエラー応答を含めてすべて保持
+        //    2-2. タイムアウト時点で無応答か1つ以上のエラー応答があればリトライ
+        const isMultiResp = ((f.run.DEOJ & 0xff) == 0 || f.address == multicastAddress);
+        if (isMultiResp && info.error != 'timeout') {
+            // 2-1
+            f.multiResp.que.push(info);
+            if (info.hasOwnProperty('error')) {
+                f.multiResp.error++;
+            }
+            return false;
+        }
         if (info.hasOwnProperty('error')) {
-            if (f.resp == 0) {
-                if (--f.retry >= 0) {
+            if (!isMultiResp || (isMultiResp && (f.multiResp.que.length == 0 || f.multiResp.error > 0))) {
+            // 1-1, 2-2
+            if (--f.retry >= 0) {
                     // リトライ間隔あけて再送
                     debug(`Retry elnode=${f.node} inst=${toHexString(f.run.DEOJ, 6)} ESV=${f.run.ESV} EPC=${toHexString(f.run.EPC, 2)} reason=${info.error}`);
                     setTimeout(sender, p.self.cfg.RETRYINTERVAL, p);
@@ -225,13 +247,15 @@ function receiver(info, p) {
             }
         }
         // コールバック
-        if (!(f.resp > 0 && info.error == 'timeout')) {
+        if (f.multiResp.que.length == 0) {
+            // 保持応答がないなら最新の応答のみ上位に渡す
             goCallback(f.node, info, f.run.callback);
-            f.resp++;
-        }
-        // マルチキャストまたは全インスタンス宛てはタイムアウトまで待つ
-        if (((f.run.DEOJ & 0xff) == 0 || f.address == multicastAddress) && info.error != 'timeout') {
-            return false;
+        } else {
+            // 保持応答があるならすべて上位に渡す
+            // 最新の応答は無視して良いタイムアウトなので捨てる
+            for (let i = 0; i < f.multiResp.que.length; i++) {
+                goCallback(f.node, f.multiResp.que[i], f.run.callback);
+            }
         }
     }
     // 次の要求へ
